@@ -20,7 +20,7 @@ MinFeePerKByte = copy.deepcopy(FeePerKByte)
 maxTXCount = 555
 txMaxSendCount = 600
 minConf = 100
-maxConf = 9999999
+maxConf = 99999999
 if "," in sys.argv[1]:
 	sendFromAddressList = sys.argv[1].split(',')
 else:
@@ -56,8 +56,8 @@ def BuildTX(utxo_list, receive_address, send_amount):
 	unsignedTX_length = Dec(str(len(unsignedTX_hex)/2))
 	del unsignedTX_hex
 	# Calc tx fee and receive amount from size
-	tx_fee = FeePerKByte*(unsignedTX_length/Dec("1000"))
-	receive_amount = send_amount - Dec(tx_fee)
+	tx_fee = Dec(str(FeePerKByte))*(unsignedTX_length/Dec("1000"))
+	receive_amount = "{:.8f}".format(send_amount - Dec(tx_fee))
 	# Wut u up to?
 	print("Receiving: %s (%s fee deducted)\r\n" % (receive_amount, tx_fee))
 	print("Building and Signing TX...")
