@@ -50,6 +50,8 @@ def daemon():
 def BuildTX(utxo_list, receive_address, send_amount):
 	# Create dummy TX first to estimate fee from size
 	unsignedTX_hex = daemon().createrawtransaction(utxo_list, {receive_address: str(send_amount)})
+	# Size as reported by RPC just in case it differs
+	dummy_unsignedTX_size = daemon().decoderawtransaction(unsignedTX_hex)["size"]
 	# Get size in bytes
 	unsignedTX_length = Dec(str(len(unsignedTX_hex)/2))
 	del unsignedTX_hex
@@ -65,7 +67,7 @@ def BuildTX(utxo_list, receive_address, send_amount):
 	signedTX = daemon().signrawtransaction(unsignedTX_hex)
 	# Decode unsigned to check value and ID
 	unsignedTX = daemon().decoderawtransaction(unsignedTX_hex)
-	print("Unsigned TX ID: %s , Total: %s, Hex Size: %s, Calc TX Fee: %s\r\n" % (unsignedTX["hash"], unsignedTX["vout"][0]["value"], unsignedTX_length, tx_fee))
+	print("Unsigned TX ID: %s , Total: %s, Dummy size: %s, Hex Size: %s, Calc TX Fee: %s\r\n" % (unsignedTX["hash"], unsignedTX["vout"][0]["value"], dummy_unsignedTX_size, unsignedTX_length, tx_fee))
 	return signedTX["hex"]
 
 # Init Vars
