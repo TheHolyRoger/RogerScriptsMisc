@@ -88,8 +88,12 @@ try:
 	FeePerKByte=daemon().estimatesmartfee(minConf)["feerate"]
 	print("Estimated Fee per KB: %s\r\n" % (FeePerKByte))
 except:
-	FeePerKByte=MinFeePerKByte
-	print("Unable to estimate fee.\r\n")
+	try:
+		FeePerKByte=daemon().estimaterawfee(minConf)["feerate"]
+		print("Estimated Fee per KB: %s\r\n" % (FeePerKByte))
+	except:
+		FeePerKByte=MinFeePerKByte
+		print("Unable to estimate fee.\r\n")
 
 # Grab UTXOs for source addresses
 for theTx in unspent:
