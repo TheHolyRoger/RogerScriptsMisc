@@ -91,7 +91,7 @@ try:
 	print("Estimated Fee per KB: %s\r\n" % (FeePerKByte))
 except:
 	try:
-		FeePerKByte=daemon().estimaterawfee(minConf)["feerate"]
+		FeePerKByte=daemon().estimaterawfee(minConf)["long"]["feerate"]
 		print("Estimated Fee per KB: %s\r\n" % (FeePerKByte))
 	except:
 		FeePerKByte=MinFeePerKByte
