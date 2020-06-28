@@ -96,5 +96,5 @@ def get_rpc_connection_info(coin_name = None, rpc_host = None, rpc_port = None):
 		if 'rpchost' in list(readconfig.keys()) and rpc_host is None:
 			rpc_config['rpc_host'] = readconfig['rpchost']
 	else:
-		return "Unable to find config file."
+		raise Exception("Unable to find config file.")
 	return rpc_config
