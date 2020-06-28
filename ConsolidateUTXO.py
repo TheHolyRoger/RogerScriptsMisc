@@ -1,22 +1,20 @@
-import sys, time, socket, copy
+# This script is written in Python3.5+
+import sys, time, socket, copy, os
 from decimal import Decimal
+Dec = Decimal
 try:
 	from bitcoinrpc.authproxy import AuthServiceProxy, JSONRPCException
 except:
 	print("This script requires the python-bitcoinrpc library available at: https://github.com/jgarzik/python-bitcoinrpc")
 	quit()
-try:
-	import coinrpc_readconfig
-except:
-	print("This script requires the coinrpc_readconfig helper available at: https://github.com/TheHolyRoger/RogerScriptsMisc/blob/master/coinrpc_readconfig.py")
-	quit()
-Dec = Decimal
 
 def PrintHelp():
 	print("\r\n\r\n\r\nConsolidateUTXO.py <FROM_ADDRESS> <TO_ADDRESS> ... --options")
 	print("(FROM_ADDRESS can be a comma separated list)\r\n")
 	print("Options:")
-	print("    --dry-run             Don't send transactions")
+	print("    --rpc-config          Path to coinrpc_config.py file containing rpc_config dict. Sample file here:")
+	print("                          https://github.com/TheHolyRoger/RogerScriptsMisc/blob/master/coinrpc_config.sample.py\r\n")
+	print("    --dry-run             Don't send transactions\r\n")
 	print("    --max-tx-count X      Change Max inputs for each TX to X (Default: 555)\r\n\r\n\r\n")
 	quit()
 	sys.exit(0)
@@ -24,6 +22,7 @@ def PrintHelp():
 if len(sys.argv) < 3:
 	PrintHelp()
 
+# Set default vars.
 PAUSE_BEFORE_SEND = 5
 FakeRun = False
 FeePerKByte = Dec("0.001")
@@ -32,12 +31,13 @@ maxTXCount = 555
 txMaxSendCount = 600
 minConf = 100
 maxConf = 99999999
+path_rpc_config = './coinrpc_config.py'
+# Split FROM_ADDRESS
 if "," in sys.argv[1]:
 	sendFromAddressList = sys.argv[1].split(',')
 else:
 	sendFromAddressList = [sys.argv[1]]
 sendToAddress = sys.argv[2]
-
 # Get and set extra parameters
 for x in range(len(sys.argv)):
 	if sys.argv[x] == '--help' or sys.argv[x] == '-h':
@@ -48,13 +48,34 @@ for x in range(len(sys.argv)):
 	if sys.argv[x] == '--max-tx-count':
 		maxTXCount = int(sys.argv[x+1])
 		print("Max inputs set to: %s\r\n" % (maxTXCount,))
+	if sys.argv[x] == '--rpc-config':
+		path_rpc_config = os.path.abspath(str(sys.argv[x+1]))
+		print("\r\nRPC Config file set to: %s\r\n" % (path_rpc_config,))
+# Check for RPC config file and load if there is one.
+if os.path.exists(path_rpc_config):
+	try:
+		import importlib.util
+		coinrpc_config_spec = importlib.util.spec_from_file_location("coinrpc_config", path_rpc_config)
+		coinrpc_config = importlib.util.module_from_spec(coinrpc_config_spec)
+		coinrpc_config_spec.loader.exec_module(coinrpc_config)
+		rpc_config = coinrpc_config.rpc_config
+	except:
+		print("Error importing coinrpc_config.py")
+		quit()
+# If not RPC config file fallback to coinrpc_readconfig helper
+# rpcuser and rpcpassword are read from the *coin.conf file
+else:
+	try:
+		import coinrpc_readconfig
+		rpc_config = coinrpc_readconfig.get_rpc_connection_info(coin_name="the holy roger", rpc_host = '127.0.0.1', rpc_port = 9662)
+	except:
+		print("This script requires the coinrpc_readconfig helper available at: https://github.com/TheHolyRoger/RogerScriptsMisc/blob/master/coinrpc_readconfig.py")
+		quit()
 if FakeRun is True:
-	print('DRY RUN\r\n')
+	print('\r\nDRY RUN\r\n')
 
 # Daemon Connection
-rpc_config = coinrpc_readconfig.get_rpc_connection_info(coin_name="the holy roger", rpc_host = '127.0.0.1', rpc_port = 9662)
 def rpc_connection():
-	# rpc_user and rpc_password are set in the bitcoin.conf file
 	return AuthServiceProxy(
 		"http://%s:%s@%s:%s"%(rpc_config['rpc_user'], rpc_config['rpc_password'], rpc_config['rpc_host'], rpc_config['rpc_port']),
 		timeout=320)
