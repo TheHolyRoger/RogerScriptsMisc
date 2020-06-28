@@ -1,12 +1,23 @@
-import theholyrogerrpc, sys, time, socket, copy
+import sys, time, socket, copy
 from decimal import Decimal
+try:
+	from bitcoinrpc.authproxy import AuthServiceProxy, JSONRPCException
+except:
+	print("This script requires the python-bitcoinrpc library available at: https://github.com/jgarzik/python-bitcoinrpc")
+	quit()
+try:
+	import coinrpc_readconfig
+except:
+	print("This script requires the coinrpc_readconfig helper available at: https://github.com/TheHolyRoger/RogerScriptsMisc/blob/master/coinrpc_readconfig.py")
+	quit()
 Dec = Decimal
 
 def PrintHelp():
-	print("consolidate.py <FROM_ADDRESS> <TO_ADDRESS> ... --options")
+	print("\r\n\r\n\r\nConsolidateUTXO.py <FROM_ADDRESS> <TO_ADDRESS> ... --options")
 	print("(FROM_ADDRESS can be a comma separated list)\r\n")
-	print("--dry-run             Don't send transactions")
-	print("--max-tx-count X      Change Max inputs for each TX to X (Default: 555)\r\n\r\n")
+	print("Options:")
+	print("    --dry-run             Don't send transactions")
+	print("    --max-tx-count X      Change Max inputs for each TX to X (Default: 555)\r\n\r\n\r\n")
 	quit()
 	sys.exit(0)
 
@@ -41,17 +52,19 @@ if FakeRun is True:
 	print('DRY RUN\r\n')
 
 # Daemon Connection
-def daemon():
-	conn = theholyrogerrpc.connect_to_local()
-	theholyrogerrpc.proxy.HTTP_TIMEOUT = 180
-	return conn
+rpc_config = coinrpc_readconfig.get_rpc_connection_info(coin_name="the holy roger", rpc_host = '127.0.0.1', rpc_port = 9662)
+def rpc_connection():
+	# rpc_user and rpc_password are set in the bitcoin.conf file
+	return AuthServiceProxy(
+		"http://%s:%s@%s:%s"%(rpc_config['rpc_user'], rpc_config['rpc_password'], rpc_config['rpc_host'], rpc_config['rpc_port']),
+		timeout=320)
 
 # Build TX logic
 def BuildTX(utxo_list, receive_address, send_amount):
 	# Create dummy TX first to estimate fee from size
-	unsignedTX_hex = daemon().createrawtransaction(utxo_list, {receive_address: str(send_amount)})
+	unsignedTX_hex = rpc_connection().createrawtransaction(utxo_list, {receive_address: str(send_amount)})
 	# Size as reported by RPC just in case it differs
-	dummy_unsignedTX_size = daemon().decoderawtransaction(unsignedTX_hex)["size"]
+	dummy_unsignedTX_size = rpc_connection().decoderawtransaction(unsignedTX_hex)["size"]
 	# Get size in bytes
 	unsignedTX_length = Dec(str(len(unsignedTX_hex)/2))
 	del unsignedTX_hex
@@ -62,11 +75,11 @@ def BuildTX(utxo_list, receive_address, send_amount):
 	print("Receiving: %s (%s fee deducted)\r\n" % (receive_amount, tx_fee))
 	print("Building and Signing TX...")
 	# Now create the real TX
-	unsignedTX_hex = daemon().createrawtransaction(utxo_list, {receive_address: str(receive_amount)})
+	unsignedTX_hex = rpc_connection().createrawtransaction(utxo_list, {receive_address: str(receive_amount)})
 	# Sign it
-	signedTX = daemon().signrawtransaction(unsignedTX_hex)
+	signedTX = rpc_connection().signrawtransaction(unsignedTX_hex)
 	# Decode unsigned to check value and ID
-	unsignedTX = daemon().decoderawtransaction(unsignedTX_hex)
+	unsignedTX = rpc_connection().decoderawtransaction(unsignedTX_hex)
 	print("Unsigned TX ID: %s , Total: %s, Dummy size: %s, Hex Size: %s, Calc TX Fee: %s\r\n" % (unsignedTX["hash"], unsignedTX["vout"][0]["value"], dummy_unsignedTX_size, unsignedTX_length, tx_fee))
 	return signedTX["hex"]
 
@@ -80,18 +93,18 @@ print('')
 
 # Grab all UTXOs in wallet
 try:
-	unspent=daemon().listunspent(minConf,maxConf)
+	unspent=rpc_connection().listunspent(minConf,maxConf)
 except:
 	print("Unable to connect to daemon, quitting.")
 	quit()
 
 # Try and get estimated fee
 try:
-	FeePerKByte=daemon().estimatesmartfee(minConf)["feerate"]
+	FeePerKByte=rpc_connection().estimatesmartfee(minConf)["feerate"]
 	print("Estimated Fee per KB: %s\r\n" % (FeePerKByte))
 except:
 	try:
-		FeePerKByte=daemon().estimaterawfee(minConf)["long"]["feerate"]
+		FeePerKByte=rpc_connection().estimaterawfee(minConf)["long"]["feerate"]
 		print("Estimated Fee per KB: %s\r\n" % (FeePerKByte))
 	except:
 		FeePerKByte=MinFeePerKByte
@@ -99,7 +112,7 @@ except:
 
 # Grab UTXOs for source addresses
 for theTx in unspent:
-	if theTx.address in sendFromAddressList:
+	if theTx['address'] in sendFromAddressList:
 		toSpend.append(theTx)
 # Set counters
 toSpendCount = len(toSpend)
@@ -113,8 +126,8 @@ print("%i TXs found in address of %i transactions available." % (toSpendCount,un
 for theTx in toSpend:
 	# If below max tx count for batch, add to batch.
 	if txCount < maxTXCount:
-		sendTXs.append({"txid": theTx.txid, "vout": theTx.vout})
-		totalToSend += Dec(theTx.amount)
+		sendTXs.append({"txid": theTx['txid'], "vout": theTx['vout']})
+		totalToSend += Dec(theTx['amount'])
 		txCount += 1
 	# If at max tx count for batch, start sending.
 	if (txCount >= maxTXCount) or (txCount >= toSpendCount): 
@@ -125,7 +138,7 @@ for theTx in toSpend:
 		time.sleep(PAUSE_BEFORE_SEND)
 		print("Sending...")
 		if FakeRun is not True:
-			txhash = daemon().sendrawtransaction(SignedTX_hex)
+			txhash = rpc_connection().sendrawtransaction(SignedTX_hex)
 		else:
 			txhash = "DRY RUN, NOT SENT"
 		# except socket.timeout:
