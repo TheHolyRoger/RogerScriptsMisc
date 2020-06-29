@@ -80,29 +80,48 @@ def rpc_connection():
 		"http://%s:%s@%s:%s"%(rpc_config['rpc_user'], rpc_config['rpc_password'], rpc_config['rpc_host'], rpc_config['rpc_port']),
 		timeout=320)
 
+class OutgoingTransaction:
+	dummy_unsigned_hex = None
+	dummy_unsigned_size = None
+	dummy_unsigned_length = None
+	utxo_list = None
+	tx_fee = None
+	unsigned_hex = None
+	signed_hex = None
+	unsigned_tx = None
+	def __init__(self, utxo_list=None, receive_addresses=[]):
+		self.create_dummy(utxo_list=utxo_list, receive_addresses=receive_addresses)
+		self.utxo_list = utxo_list
+	def create_dummy(self, utxo_list, receive_addresses):
+		# Create dummy TX first to estimate fee from size
+		self.dummy_unsigned_hex = rpc_connection().createrawtransaction(utxo_list, receive_addresses)
+		# Size as reported by RPC just in case it differs
+		self.dummy_unsigned_size = rpc_connection().decoderawtransaction(self.dummy_unsigned_hex)["size"]
+		# Get size in bytes
+		self.dummy_unsigned_length = Dec(str(len(self.dummy_unsigned_hex)/2))
+	def calculate_txfee(self, FeePerKByte):
+		# Calc tx fee and receive amount from size
+		self.tx_fee = Dec(str(FeePerKByte))*(self.dummy_unsigned_length/Dec("1000"))
+	def create_tx(self, receive_addresses):
+		# Now create the real TX
+		self.unsigned_hex = rpc_connection().createrawtransaction(self.utxo_list, receive_addresses)
+		# Sign it
+		self.signed_hex = rpc_connection().signrawtransaction(self.unsigned_hex)
+		# Decode unsigned to check value and ID
+		self.unsigned_tx = rpc_connection().decoderawtransaction(self.unsigned_hex)
+
 # Build TX logic
 def BuildTX(utxo_list, receive_address, send_amount):
-	# Create dummy TX first to estimate fee from size
-	unsignedTX_hex = rpc_connection().createrawtransaction(utxo_list, {receive_address: str(send_amount)})
-	# Size as reported by RPC just in case it differs
-	dummy_unsignedTX_size = rpc_connection().decoderawtransaction(unsignedTX_hex)["size"]
-	# Get size in bytes
-	unsignedTX_length = Dec(str(len(unsignedTX_hex)/2))
-	del unsignedTX_hex
-	# Calc tx fee and receive amount from size
-	tx_fee = Dec(str(FeePerKByte))*(unsignedTX_length/Dec("1000"))
-	receive_amount = "{:.8f}".format(send_amount - Dec(tx_fee))
+	TheTX = OutgoingTransaction(utxo_list=utxo_list, receive_addresses={receive_address: str(send_amount)})
+	TheTX.calculate_txfee(FeePerKByte)
+	receive_amount = "{:.8f}".format(send_amount - Dec(TheTX.tx_fee))
 	# Wut u up to?
-	print("Receiving: %s (%s fee deducted)\r\n" % (receive_amount, tx_fee))
+	print("Receiving: %s (%s fee deducted)\r\n" % (receive_amount, TheTX.tx_fee))
 	print("Building and Signing TX...")
-	# Now create the real TX
-	unsignedTX_hex = rpc_connection().createrawtransaction(utxo_list, {receive_address: str(receive_amount)})
-	# Sign it
-	signedTX = rpc_connection().signrawtransaction(unsignedTX_hex)
-	# Decode unsigned to check value and ID
-	unsignedTX = rpc_connection().decoderawtransaction(unsignedTX_hex)
-	print("Unsigned TX ID: %s , Total: %s, Dummy size: %s, Hex Size: %s, Calc TX Fee: %s\r\n" % (unsignedTX["hash"], unsignedTX["vout"][0]["value"], dummy_unsignedTX_size, unsignedTX_length, tx_fee))
-	return signedTX["hex"]
+	TheTX.create_tx(receive_addresses={receive_address: str(receive_amount)})
+	print("Unsigned TX ID: %s , Total: %s, Dummy size: %s, Hex Size: %s, Calc TX Fee: %s\r\n" % (
+		TheTX.unsigned_tx["hash"], TheTX.unsigned_tx["vout"][0]["value"], TheTX.dummy_unsigned_size, TheTX.dummy_unsigned_length, TheTX.tx_fee))
+	return TheTX.signed_hex["hex"]
 
 # Init Vars
 toSpend = []
