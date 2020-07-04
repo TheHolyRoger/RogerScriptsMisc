@@ -127,11 +127,11 @@ while CheckDiff == StartingDiff:
 		timewindow_curdiff = date_next_diff - prev_blockData['time']
 		timewindow_expected = Dec(str(BlockTime))*Dec("60")*Dec(str(DiffRetargetBlocks))
 		percent_change = ((timewindow_expected - timewindow_curdiff)/timewindow_curdiff)*100
-		msg = "\r\n\r\nCurrent Diff: %.2f @ %s, Previous re-target @ %s, Previous diff: %.2f, Next re-target @ %s (Estimated in %s @ %s, up to %.1f%% change(?))\r\n\r\n" % (cur_diff, best_block_height, int(CheckBlock['height']), prev_blockData['difficulty'], next_retarget, time_to_next_diff_str, date_next_diff_str, percent_change)
+		msg = "Current Diff: %.2f @ %s, Previous re-target @ %s, Previous diff: %.2f, Next re-target @ %s (Estimated in %s @ %s, up to %.1f%% change)" % (cur_diff, best_block_height, int(CheckBlock['height']), prev_blockData['difficulty'], next_retarget, time_to_next_diff_str, date_next_diff_str, percent_change)
 		if 'Notifiers' in sys.modules:
 			pass
 			Notifiers.NotifyDiscord('RogerDiff', msg)
-		print(msg)
+		print("\r\n\r\n%s\r\n\r\n" % (msg))
 		CheckDiff = prev_blockData['difficulty']
 
 	CheckBlock = prev_blockData
