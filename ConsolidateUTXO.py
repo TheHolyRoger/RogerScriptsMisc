@@ -27,7 +27,7 @@ PAUSE_BEFORE_SEND = 5
 FakeRun = False
 FeePerKByte = Dec("0.001")
 MinFeePerKByte = copy.deepcopy(FeePerKByte)
-maxTXCount = 555
+maxTXCount = 500
 txMaxSendCount = 600
 minConf = 100
 maxConf = 99999999
@@ -101,12 +101,19 @@ class OutgoingTransaction:
 		self.dummy_unsigned_length = Dec(str(len(self.dummy_unsigned_hex)/2))
 	def calculate_txfee(self, FeePerKByte):
 		# Calc tx fee and receive amount from size
-		self.tx_fee = Dec(str(FeePerKByte))*(self.dummy_unsigned_length/Dec("1000"))
+		tx_size = self.dummy_unsigned_length+Dec("120")
+		self.tx_fee = Dec(Dec(str(FeePerKByte))*(tx_size/Dec("1000")))
+	def set_zero_fee(self):
+		# Set zero fee
+		self.tx_fee = Dec("0")
 	def create_tx(self, receive_addresses):
 		# Now create the real TX
 		self.unsigned_hex = rpc_connection().createrawtransaction(self.utxo_list, receive_addresses)
 		# Sign it
-		self.signed_hex = rpc_connection().signrawtransaction(self.unsigned_hex)
+		try:
+			self.signed_hex = rpc_connection().signrawtransaction(self.unsigned_hex)
+		except JSONRPCException:
+			self.signed_hex = rpc_connection().signrawtransactionwithwallet(self.unsigned_hex)
 		# Decode unsigned to check value and ID
 		self.unsigned_tx = rpc_connection().decoderawtransaction(self.unsigned_hex)
 
@@ -128,6 +135,7 @@ toSpend = []
 txCount = 0
 txSentCount = 0
 sendTXs = []
+signedTXList = []
 totalToSend = Dec('0')
 print('')
 
