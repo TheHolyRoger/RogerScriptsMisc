@@ -26,12 +26,16 @@ def ParseArgs():
                         help="Don't send transactions.")
     parser.add_argument('--max-tx-count', '-m', dest="max_tx_count", type=int, default=555,
                         help="Change Max inputs for each TX to X (Default: 555).")
-    parser.add_argument('--max-total-tx', dest="max_total_txs", type=int, default=600,
-                        help="Max amount of TXs to send in this run (Default: 600).")
+    parser.add_argument('--max-total-tx', dest="max_total_txs", type=int, default=10000,
+                        help="Max amount of TXs to send in this run (Default: 10000).")
     parser.add_argument('--min-confirms', dest="min_confirms", type=int, default=100,
                         help="Minimum confirmations required for UTXOs (Default: 100).")
     parser.add_argument('--max-confirms', dest="max_confirms", type=int, default=99999999,
                         help="Maximum confirmations required for UTXOs (Default: 99999999).")
+    parser.add_argument('--pause-time', dest="pause_time", type=int, default=5,
+                        help="Time to pause before sending (Default: 5).")
+    parser.add_argument('--wallet-passphrase', dest="wallet_passphrase", type=str,
+                        help="Wallet passphrase")
     args = parser.parse_args()
     if "," in args.from_addresses:
         args.from_addresses = args.from_addresses.split(',')
@@ -53,14 +57,16 @@ class OutgoingTransaction:
     def __init__(self,
                  rpc_connection,
                  utxo_list=None,
-                 receive_addresses=[]):
-        self.create_dummy(utxo_list=utxo_list, receive_addresses=receive_addresses)
+                 receive_addresses=[],
+                 wallet_passphrase=None):
         self.utxo_list = utxo_list
         self.rpc_connection = rpc_connection
+        self.wallet_passphrase = wallet_passphrase
+        self.create_dummy(receive_addresses=receive_addresses)
 
-    def create_dummy(self, utxo_list, receive_addresses):
+    def create_dummy(self, receive_addresses):
         # Create dummy TX first to estimate fee from size
-        self.dummy_unsigned_hex = self.rpc_connection().createrawtransaction(utxo_list, receive_addresses)
+        self.dummy_unsigned_hex = self.rpc_connection().createrawtransaction(self.utxo_list, receive_addresses)
         # Size as reported by RPC just in case it differs
         self.dummy_unsigned_size = self.rpc_connection().decoderawtransaction(self.dummy_unsigned_hex)["size"]
         # Get size in bytes
@@ -90,7 +96,6 @@ class OutgoingTransaction:
 class ConsolidateUTXO:
     def __init__(self):
         # Set default vars.
-        self.PAUSE_BEFORE_SEND = 5
         self.FakeRun = False
         self.FeePerKByte = Dec("0.001")
         self.MinFeePerKByte = copy.deepcopy(self.FeePerKByte)
@@ -103,6 +108,10 @@ class ConsolidateUTXO:
         self.txMaxSendCount = args.max_total_txs
         self.minConf = args.min_confirms
         self.maxConf = args.max_confirms
+        self.pause_time = args.pause_time
+        if self.pause_time < 1:
+            self.pause_time = 0.1
+        self.wallet_passphrase = args.wallet_passphrase
         print("Max inputs set to: %s\r\n" % (self.maxTXCount,))
         if args.rpc_config is not None:
             self.path_rpc_config = os.path.abspath(str(args.rpc_config))
@@ -164,7 +173,11 @@ class ConsolidateUTXO:
         # Wut u up to?
         print("Receiving: %s (%s fee deducted)\r\n" % (receive_amount, TheTX.tx_fee))
         print("Building and Signing TX...")
-        TheTX.create_tx(receive_addresses={self.sendToAddress: str(receive_amount)})
+        try:
+            TheTX.create_tx(receive_addresses={self.sendToAddress: str(receive_amount)})
+        except Exception:
+            self.unlock_wallet()
+            TheTX.create_tx(receive_addresses={self.sendToAddress: str(receive_amount)})
         print("Unsigned TX ID: %s , Total: %s, Dummy size: %s, Hex Size: %s, Calc TX Fee: %s\r\n" % (
             TheTX.unsigned_tx["hash"],
             TheTX.unsigned_tx["vout"][0]["value"],
@@ -172,6 +185,16 @@ class ConsolidateUTXO:
             TheTX.dummy_unsigned_length,
             TheTX.tx_fee))
         return TheTX.signed_hex["hex"]
+
+    def unlock_wallet(self):
+        try:
+            if self.wallet_passphrase:
+                self.rpc_connection().walletpassphrase(self.wallet_passphrase, 900)
+                return True
+        except Exception:
+            pass
+        print("\n\n\nWALLET IS LOCKED. EXITING.\n\n\n")
+        quit()
 
     def gather_spends(self):
         if self.FakeRun is True:
@@ -221,10 +244,10 @@ class ConsolidateUTXO:
             # If at max tx count for batch, start sending.
             if (self.txCount >= self.maxTXCount) or (self.txCount >= self.toSpendCount):
                 print("Sending From: %s  To: %s (%s)" % (self.sendFromAddressList, self.sendToAddress, self.totalToSend))
-                SignedTX_hex = self.Build_TX(self.sendTXs, self.sendToAddress, self.totalToSend)
+                SignedTX_hex = self.Build_TX()
                 print("Ready to send? (ctrl+c to cancel)\n")
                 # You can quit the script here before "Sending" appears to exit without sending anything
-                time.sleep(self.PAUSE_BEFORE_SEND)
+                time.sleep(self.pause_time)
                 print("Sending...")
                 if self.FakeRun is not True:
                     txhash = self.rpc_connection().sendrawtransaction(SignedTX_hex)
